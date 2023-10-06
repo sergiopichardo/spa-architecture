@@ -4,4 +4,4 @@ import * as cdk from 'aws-cdk-lib';
 import { RootStack } from '../lib/root-stack';
 
 const app = new cdk.App();
-new RootStack(app, 'InfraStaticWebsiteStack');
+new RootStack(app, 'SPAStack');
