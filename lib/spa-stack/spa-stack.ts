@@ -2,23 +2,33 @@ import { Construct } from 'constructs';
 import * as cdk from 'aws-cdk-lib';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
+import * as route53 from 'aws-cdk-lib/aws-route53';
+import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
+import * as route53targets from 'aws-cdk-lib/aws-route53-targets'
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as cloudfrontOrigins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as fs from 'fs';
 
 
-interface CloudFrontNestedStackProps extends cdk.NestedStackProps {
-    originBucketArn: string;
+interface SpaNestedStackProps extends cdk.NestedStackProps {
     cloudFrontFunctionPath: string;
+    domainName: string;
+    subdomain: string;
+    hostedZoneId: string;
+    buildAssetsPath: string;
 }
 
-export default class CloudFrontNestedStack extends cdk.NestedStack {
+export default class SpaNestedStack extends cdk.NestedStack {
     public distribution: cloudfront.IDistribution;
 
-    constructor(scope: Construct, id: string, props: CloudFrontNestedStackProps) {
+    constructor(scope: Construct, id: string, props: SpaNestedStackProps) {
         super(scope, id, props);
 
-        const originBucket = this.importOriginBucket(props.originBucketArn);
+        // S3 
+        const originBucket = this.createOriginBucket();
+        this.createDeployment(originBucket, props.buildAssetsPath);
+        
         const oai = this.createOriginAccessIdentity();
         const oaiPrincipal = this.createOriginAccessIdentityPrincipal(oai);
         this.grantPermissionsToOriginAccessIdentityPrincipal(originBucket, oaiPrincipal);
@@ -27,13 +37,27 @@ export default class CloudFrontNestedStack extends cdk.NestedStack {
             throw new Error("A path to the CloudFront function must be provided")
         }
 
-        const cloudFrontFunction = this.createCloudFrontFunction(props.cloudFrontFunctionPath);
-        const distribution = this.createDistribution(originBucket, oai, cloudFrontFunction);
+        const hostedZone = this.importHostedZone(props.domainName, props.hostedZoneId);
 
-        new cdk.CfnOutput(this, 'CloudFrontDistributionURL', {
-            description: "CloudFront distribution URL",
-            value: `https://${distribution.distributionDomainName}`,
+        const cloudFrontFunction = this.createCloudFrontFunction(props.cloudFrontFunctionPath);
+
+        const certificate = new acm.Certificate(this, 'SPACertificate', {
+            domainName: props.domainName,
+            subjectAlternativeNames: [`*.${props.domainName}`],
+            validation: acm.CertificateValidation.fromDns(hostedZone)
         })
+
+        this.distribution = this.createDistribution(
+            originBucket, 
+            oai, 
+            cloudFrontFunction,
+            [props.domainName, `${props.subdomain}.${props.domainName}`],
+            certificate
+        );
+
+        this.createARecord(hostedZone, this.distribution);
+
+        this.createOutputs();
     }
 
     importOriginBucket(originBucketArn: string) {
@@ -86,10 +110,13 @@ export default class CloudFrontNestedStack extends cdk.NestedStack {
         originBucket: s3.IBucket, 
         originAccessIdentity: cloudfront.IOriginAccessIdentity,
         cloudFrontFunction: cloudfront.IFunction,
+        domainNames: string[],
+        certificate: acm.ICertificate
     ) {
         return new cloudfront.Distribution(this, 'CloudFrontDistribution', {
             comment: "Single page application CloudFront distribution", 
             defaultRootObject: 'index.html',
+            minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
             defaultBehavior: {
                 origin: new cloudfrontOrigins.S3Origin(originBucket, {
                     originAccessIdentity: originAccessIdentity
@@ -100,15 +127,20 @@ export default class CloudFrontNestedStack extends cdk.NestedStack {
                         function: cloudFrontFunction
                     }
                 ],
+                compress: true,
+                allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
+                viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
             },
             errorResponses: [
                 {
-                    ttl: cdk.Duration.seconds(300),
+                    ttl: cdk.Duration.minutes(30),
                     httpStatus: 403,
                     responseHttpStatus: 200,
                     responsePagePath: '/404.html'
                 }
-            ]
+            ],
+            domainNames: domainNames,
+            certificate: certificate,
         });
     }
 
@@ -116,5 +148,47 @@ export default class CloudFrontNestedStack extends cdk.NestedStack {
         return new cloudfront.Function(this, 'CloudFrontFunction', {
             code: cloudfront.FunctionCode.fromFile({ filePath: cloudFrontFunctionPath })
         });
+    }
+
+    importHostedZone(domainName: string, hostedZoneId: string) {
+        return route53.HostedZone.fromHostedZoneAttributes(this, 'ImportedHostedZone', {
+            hostedZoneId: hostedZoneId,
+            zoneName: domainName,
+        });
+    }
+
+    createARecord(
+        hostedZone: route53.IHostedZone, 
+        distribution: cloudfront.IDistribution,
+    ): route53.ARecord {
+        return new route53.ARecord(this, 'SPAAliasRecord', {
+            zone: hostedZone,
+            target: route53.RecordTarget.fromAlias(
+                new route53targets.CloudFrontTarget(distribution)
+            )
+        });
+    }
+
+    createOriginBucket() {
+        return new s3.Bucket(this, 'OriginBucket', {
+            blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+            autoDeleteObjects: true,
+            publicReadAccess: false,
+        });
+    }
+    
+    createDeployment(originBucket: s3.IBucket, buildAssetsPath: string) {
+        new s3deploy.BucketDeployment(this, 'OriginDeployment', {
+            sources: [s3deploy.Source.asset(buildAssetsPath)],
+            destinationBucket: originBucket
+        });
+    }
+
+    createOutputs() {
+        new cdk.CfnOutput(this, 'CloudFrontDistributionURL', {
+            description: "CloudFront distribution URL",
+            value: `https://${this.distribution.distributionDomainName}`,
+        })
     }
 }
