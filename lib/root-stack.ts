@@ -6,6 +6,7 @@ import SpaNestedStack from './nested-stacks/spa-stack';
 import ObjectStorageNestedStack from './nested-stacks/object-storage';
 import CloudFrontNestedStack from './nested-stacks/cloudfront';
 import CertificateNestedStack from './nested-stacks/certificate';
+import DnsNestedStack from './nested-stacks/dns';
 
 interface RootStackProps extends cdk.StackProps {
   domainName: string;
@@ -47,5 +48,13 @@ export class RootStack extends cdk.Stack {
 
     cdnStack.addDependency(s3Stack);
     cdnStack.addDependency(certificateStack);
+
+    const dnsStack = new DnsNestedStack(this, 'DNSNestedStack', {
+      distribution: cdnStack.distribution,
+      domainName: props.domainName,
+      hostedZoneId: props.hostedZoneId,
+    })
+
+    dnsStack.addDependency(cdnStack);
   }
 }
