@@ -41,18 +41,18 @@ export default class SpaNestedStack extends cdk.NestedStack {
 
         const cloudFrontFunction = this.createCloudFrontFunction(props.cloudFrontFunctionPath);
 
-        const certificate = new acm.Certificate(this, 'SPACertificate', {
-            domainName: props.domainName,
-            subjectAlternativeNames: [`*.${props.domainName}`],
-            validation: acm.CertificateValidation.fromDns(hostedZone)
-        })
+        // const certificate = new acm.Certificate(this, 'SPACertificate', {
+        //     domainName: props.domainName,
+        //     subjectAlternativeNames: [`*.${props.domainName}`],
+        //     validation: acm.CertificateValidation.fromDns(hostedZone)
+        // })
 
         this.distribution = this.createDistribution(
             originBucket, 
             oai, 
             cloudFrontFunction,
-            [props.domainName, `${props.subdomain}.${props.domainName}`],
-            certificate
+            [props.domainName],
+            // certificate
         );
 
         this.createARecord(hostedZone, this.distribution);
@@ -60,9 +60,7 @@ export default class SpaNestedStack extends cdk.NestedStack {
         this.createOutputs();
     }
 
-    importOriginBucket(originBucketArn: string) {
-        return s3.Bucket.fromBucketArn(this, 'ImportedOriginBucket', originBucketArn);
-    }
+    
 
     createOriginAccessIdentity() {
         return new cloudfront.OriginAccessIdentity(this, 'OriginAccessIdentity');
@@ -111,7 +109,7 @@ export default class SpaNestedStack extends cdk.NestedStack {
         originAccessIdentity: cloudfront.IOriginAccessIdentity,
         cloudFrontFunction: cloudfront.IFunction,
         domainNames: string[],
-        certificate: acm.ICertificate
+        // certificate: acm.ICertificate
     ) {
         return new cloudfront.Distribution(this, 'CloudFrontDistribution', {
             comment: "Single page application CloudFront distribution", 
@@ -140,7 +138,7 @@ export default class SpaNestedStack extends cdk.NestedStack {
                 }
             ],
             domainNames: domainNames,
-            certificate: certificate,
+            // certificate: certificate,
         });
     }
 
