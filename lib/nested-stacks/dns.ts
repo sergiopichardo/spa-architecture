@@ -29,7 +29,8 @@ export default class DnsNestedStack extends cdk.NestedStack {
 
         const hostedZone = this.importHostedZone(props.hostedZoneId, props.domainName);
 
-        this.createAliasRecord(hostedZone, props.distribution);
+        this.createAliasRecord(hostedZone, props.distribution, props.domainName);
+        this.createAliasRecord(hostedZone, props.distribution, `www.${props.domainName}`);
     }
 
     private importHostedZone(hostedZoneId: string, domainName: string) {
@@ -41,13 +42,15 @@ export default class DnsNestedStack extends cdk.NestedStack {
 
     private createAliasRecord(
         hostedZone: route53.IHostedZone, 
-        distribution: cloudfront.IDistribution
+        distribution: cloudfront.IDistribution,
+        domainName: string,
     ): route53.ARecord {
-        return new route53.ARecord(this, 'SPAAliasRecord', {
+        return new route53.ARecord(this, `SPAAliasRecord-${domainName}`, {
             zone: hostedZone,
             target: route53.RecordTarget.fromAlias(
                 new route53targets.CloudFrontTarget(distribution)
-            )
+            ),
+            recordName: domainName,
         });
     }
 }

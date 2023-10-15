@@ -32,6 +32,8 @@ export default class ObjectStorageNestedStack extends cdk.NestedStack {
         return new s3deploy.BucketDeployment(this, 'OriginDeployment', {
             sources: [s3deploy.Source.asset(buildAssetsPath)],
             destinationBucket: this.originBucket,
-        })
+            // https://github.com/aws/aws-cdk/tree/main/packages/aws-cdk-lib/aws-s3-deployment#retain-on-delete
+            retainOnDelete: false,
+        });
     }
 }

@@ -2,7 +2,6 @@ import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as path from 'path'
 
-import SpaNestedStack from './nested-stacks/spa-stack';
 import ObjectStorageNestedStack from './nested-stacks/object-storage';
 import CloudFrontNestedStack from './nested-stacks/cloudfront';
 import CertificateNestedStack from './nested-stacks/certificate';

@@ -150,6 +150,4 @@ export default class CloudFrontNestedStack extends cdk.NestedStack {
             value: `https://${this.distribution.distributionDomainName}`,
         })
     }
-
-
 }
